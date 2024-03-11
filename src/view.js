@@ -1,74 +1,33 @@
-import { createStore, applyMiddleware } from 'redux'
-import { ActionCreators } from 'redux-undo'
-import { createLogger } from 'redux-logger'
 import * as d3 from 'd3'
-
-import * as actions from './actions'
-import reducers from './reducers'
 
 // MARK: Some constants.
 
 const TRANSITION_SIDE = 30
 const PLACE_RADIUS    = Math.sqrt(TRANSITION_SIDE * TRANSITION_SIDE / 2)
 
-// MARK: Default semantics.
-
-function defaultIsFireable(t, marking) {
-  return Object.keys(t.preconditions).every((p) => marking[p] >= t.preconditions[p])
-}
-
-function defaultFire(t, marking) {
-  const pre         = t.preconditions
-  const post        = t.postconditions
-  const nextMarking = {}
-
-  for (const p in marking) {
-    if (!marking.hasOwnProperty(p)) {
-      throw new Error(
-        `'${p}' is precondition of '${t.name}' but doesn't appear in marking '${marking}'.`)
-    }
-
-    nextMarking[p] = (marking[p] || 0) - (pre[p] || 0) + (post[p] || 0)
-
-    if (nextMarking[p] < 0) {
-      throw new Error(`'${t.name}' is not fireable`)
-    }
-  }
-
-  return nextMarking
-}
-
 // MARK: The PetriNet class.
 
 /**
- * Class representing a Petri Net simulator.
+ * Helper class to render a Petri Net.
  *
- * This class holds the state of a Petri Net simulator, and renders its view. The semantics of the
- * underlying Petri Net model is customizable (see constructor), but defaults to Place/Transition
- * nets (see https://en.wikipedia.org/wiki/Petri_net).
+ * This class holds the state of a Petri Net simulator, and renders its view.
  */
-export default class PetriNet {
+export default class PetriNetView {
 
   /**
-   * Creates a Petri Net simulator.
+   * Creates a Petri Net View.
    *
    * @param {HTMLElement} element - An SVG node the simulator will be rendered to.
-   * @param {Object}      model   - The Petri Net model to simulate.
-   * @param {Object}      options - Additional options
-   */
-  constructor(element, model, options = { fireSemantics: {}, enableLogging: false }) {
+   * @param {PetriNetModel} model   - The Petri Net model to simulate.
+   * @param {Boolean}      dragNodes - Whether nodes are drag-and-drop-able.
+  */
+  constructor(element, model, dragNodes = false) {
     this.svg     = d3.select(element)
     const width  = this.svg.node().getBoundingClientRect().width
     const height = this.svg.node().getBoundingClientRect().height
 
-    // Handle default options.
-    const customFireSemantics = options.fireSemantics || {}
-    this.fireSemantics = {
-      isFireable   : customFireSemantics.isFireable    || defaultIsFireable,
-      fire         : customFireSemantics.fire          || defaultFire,
-      chooseBinding: customFireSemantics.chooseBinding || null,
-    }
-
+    this.model = model
+    this.dragNodes = dragNodes;
     // Build the arrow en marker. Note that arrows are drawn like that: ``-->-``. Hence we should draw
     // their source and target nodes over them, so as to hide the exceeding parts.
     this.svg.append('svg:defs').selectAll('marker')
@@ -104,14 +63,7 @@ export default class PetriNet {
           .attr('x', (d) => (d.source.x + d.target.x) / 2)
           .attr('y', (d) => (d.source.y + d.target.y) / 2)
       })
-
-    // Create the redux store.
-    this.store = options.enableLogging
-      ? this.store = createStore(reducers, applyMiddleware(createLogger({ collapsed: true })))
-      : this.store = createStore(reducers)
-    this.store.subscribe(::this.render)
-    this.store.dispatch(actions.init(model))
-    this.store.dispatch(ActionCreators.clearHistory())
+    this.render();
   }
 
   handleDragStart(d) {
@@ -135,39 +87,8 @@ export default class PetriNet {
     d.fy = null
   }
 
-  /** Returns the current marking of the model. */
-  marking() {
-    return this.store.getState().marking.present
-  }
-
-  /** Returns the sequence of transition (with their optional binding) fired so far. */
-  sequence() {
-    return this.store.getState().sequence.present
-  }
-
-  /** Attempt to fire the given transition. */
-  fire(transition) {
-    const marking = this.store.getState().marking.present
-    const binding = this.fireSemantics.chooseBinding !== null
-      ? this.fireSemantics.chooseBinding(transition, marking)
-      : null
-    this.store.dispatch(actions.fireTransition(
-      transition, marking, binding, this.fireSemantics.fire))
-  }
-
-  /** Undo the last transition firing. */
-  undo() {
-    this.store.dispatch(ActionCreators.undo())
-  }
-
-  /** Redo the last transition firing. */
-  redo() {
-    this.store.dispatch(ActionCreators.redo())
-  }
-
   render() {
-    const model   = this.store.getState().model
-    const marking = this.store.getState().marking.present
+    const model = this.model
 
     // Adapt places and transitions data to d3. The goal is to create an array that contains all
     // vertices and another that contains all egdes, so that it'll be easier to handle them in the
@@ -181,7 +102,6 @@ export default class PetriNet {
           ...transition,
           id  : transition.name,
           type: 'transition',
-          fire: () => this.fire(transition),
         })))
 
     // edges: [(source: String, target: String, label: Model.Transition.Label)]
@@ -206,7 +126,7 @@ export default class PetriNet {
       .reduce((partialResult, e) => partialResult.concat(e))
 
     // Note that because d3 will mutate the data objects we'll bind to the vertices, we can't bind
-    // the updated data as is. Instead, we should mutate the already bound objetcs, so that we can
+    // the updated data as is. Instead, we should mutate the already bound objects, so that we can
     // preserve the positions and relations that were computed by the previous simulation run.
     const updatedVertices = this.nodesGroup.selectAll('g').data()
     for (const vertex of vertices) {
@@ -242,10 +162,14 @@ export default class PetriNet {
     const nodesEnter = nodes.enter().append('g')
       .attr('id'   , (vertex) => vertex.id)
       .attr('class', (vertex) => vertex.type)
+
+    if(this.dragNodes){
+      nodesEnter
       .call(d3.drag()
         .on('start', ::this.handleDragStart)
         .on('drag' , ::this.handleDrag)
         .on('end'  , ::this.handleDragEnd))
+    }
 
     const places = nodesEnter.filter('.place')
     places.append('circle')
@@ -280,15 +204,13 @@ export default class PetriNet {
       .attr('text-anchor'       , 'middle')
       .attr('alignment-baseline', 'central')
       .text((transition) => transition.id)
-    transitions.on('click', (t) => t.fire())
 
     nodes = nodesEnter.merge(nodes)
 
+    const marking = this.model.state;
     // Update place markings and transition states.
     nodes.filter('.place').select('.marking')
       .text((p) => marking[p.id])
-    nodes.filter('.transition').
-      classed('fireable', (t) => this.fireSemantics.isFireable(t, marking))
 
     // Run the force simulation to space out places and transitions.
     this.simulation.nodes(updatedVertices)

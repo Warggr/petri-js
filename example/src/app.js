@@ -1,4 +1,4 @@
-import PetriNet from 'petri-js'
+import PetriNetView from 'petri-js'
 
 // Create a new PetriNet view.
 const model = {
@@ -15,22 +15,7 @@ const model = {
       postconditions: { 'p0': 1 },
     },
   ],
-  m0: { 'p0': 1, 'p1': 0 },
+  state: { 'p0': 1, 'p1': 0 },
 }
 
-const petrinet = new PetriNet(document.getElementById('petrinet'), model)
-
-// Bind undo/redo commands
-document.onkeydown = (e) => {
-  e = e || window.event
-  switch (e.key) {
-  case 'ArrowLeft':
-    petrinet.undo()
-    break
-  case 'ArrowRight':
-    petrinet.redo()
-    break
-  default:
-    break
-  }
-}
+const petrinet = new PetriNetView(document.getElementById('petrinet'), model, /*dragNodes=*/ true)
