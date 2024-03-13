@@ -1,10 +1,28 @@
-import PetriNetModel from './model';
+import PetriNetModel, { Node, Transition } from './model';
 
-export declare class PetriNetView {
+type Vertex = {
+    id : string,
+    type : string,
+}
+
+type Edge = {
+    id : string,
+}
+
+export declare class BipartiteGraphRenderer {
+    onClickTransition: (transition: Transition) => void;
+    onClickNode: (node: Node) => void;
+
     constructor(
         element : HTMLElement,
-        model : PetriNetModel,
-        dragNodes : boolean | undefined, // TODO: default value is false, maybe I can somehow express it here
+        nodes : Vertex[],
+        arcs : Edge[],
+        dragNodes? : boolean, // TODO: default value is false, maybe I can somehow express it here
     );
-    render() : undefined;
+
+    static fromPetriNetModel(
+        model : PetriNetModel,
+        element : HTMLElement,
+        dragNodes? : boolean,
+    ) : BipartiteGraphRenderer;
 }

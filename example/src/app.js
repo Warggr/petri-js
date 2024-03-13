@@ -1,4 +1,4 @@
-import PetriNetView from 'petri-js'
+import BipartiteGraphRenderer from 'petri-js'
 
 // Create a new PetriNet view.
 const model = {
@@ -13,9 +13,11 @@ const model = {
       name          : 't0',
       preconditions : { 'p1': 1 },
       postconditions: { 'p0': 1 },
+      inhibitors    : [ 'p0' ],
     },
   ],
   state: { 'p0': 1, 'p1': 0 },
 }
 
-const petrinet = new PetriNetView(document.getElementById('petrinet'), model, /*dragNodes=*/ true)
+const petrinet = BipartiteGraphRenderer.fromPetriNetModel(model, document.getElementById('petrinet'), /*dragNodes=*/ true)
+petrinet.setMarkings(model.state)

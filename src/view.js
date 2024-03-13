@@ -5,32 +5,32 @@ import * as d3 from 'd3'
 const TRANSITION_SIDE = 30
 const PLACE_RADIUS    = Math.sqrt(TRANSITION_SIDE * TRANSITION_SIDE / 2)
 
-// MARK: The PetriNet class.
-
 /**
- * Helper class to render a Petri Net.
- *
- * This class holds the state of a Petri Net simulator, and renders its view.
+ * Helper class to render any bipartite graph.
  */
-export default class PetriNetView {
+export default class BipartiteGraphRenderer {
+  onClickTransition = (_transition) => {};
+  onClickNode       = (_node) => {};
 
   /**
-   * Creates a Petri Net View.
+   * Creates a BipartiteGraphRenderer.
    *
    * @param {HTMLElement} element - An SVG node the simulator will be rendered to.
-   * @param {PetriNetModel} model   - The Petri Net model to simulate.
-   * @param {Boolean}      dragNodes - Whether nodes are drag-and-drop-able.
+   * @param {Array}       vertices
+   * @param {Array}       edges
+   * @param {boolean}     dragNodes - Whether nodes are drag-and-drop-able.
   */
-  constructor(element, model, dragNodes = false) {
-    this.svg     = d3.select(element)
-    const width  = this.svg.node().getBoundingClientRect().width
-    const height = this.svg.node().getBoundingClientRect().height
+  constructor(element, vertices, edges, dragNodes) {
+    console.warn(vertices)
+    console.warn(edges)
 
-    this.model = model
-    this.dragNodes = dragNodes;
-    // Build the arrow en marker. Note that arrows are drawn like that: ``-->-``. Hence we should draw
+    const svg     = d3.select(element)
+    const width  = svg.node().getBoundingClientRect().width
+    const height = svg.node().getBoundingClientRect().height
+
+    // Build the arrow end marker. Note that arrows are drawn like that: ``-->-``. Hence we should draw
     // their source and target nodes over them, so as to hide the exceeding parts.
-    this.svg.append('svg:defs').selectAll('marker')
+    svg.append('svg:defs').selectAll('marker')
       .data(['end']).enter()
       .append('svg:marker')
       .attr('id'          , String)
@@ -42,8 +42,64 @@ export default class PetriNetView {
       .append('svg:path')
       .attr('d', 'M0,0 L0,8 L8,4 z')
 
-    this.arcsGroup  = this.svg.append('g').attr('class', 'arcs')
-    this.nodesGroup = this.svg.append('g').attr('class', 'nodes')
+    // Create arcs (before the nodes, so that the nodes are on top)
+    const arcsGroup  = svg.append('g').attr('class', 'arcs')
+
+    let arcs = arcsGroup.selectAll('g')
+      .data(edges, (d) => d.id)
+
+    arcs.exit().remove()
+    const arcsEnter = arcs.enter().append('g')
+      .attr('id', (edge) => edge.id)
+    arcsEnter.append('line')
+      .attr('stroke'      , (edge) => edge.color || 'black')
+      .attr('stroke-width', 1)
+      .attr('marker-end'  , 'url(#end)')
+    arcsEnter.filter((edge) => edge.label !== undefined && edge.label != '1').append('text')
+      .text((edge) => edge.label)
+
+    // Create nodes
+    const nodesGroup = svg.append('g').attr('class', 'nodes')
+
+    const nodesEnter = nodesGroup.selectAll('g')
+      .data(vertices, (d) => d.id)
+      .enter().append('g')
+        .attr('id'   , (vertex) => vertex.id)
+        .attr('class', (vertex) => vertex.type)
+
+    const places = nodesEnter.filter('.place')
+    places.append('circle')
+      .attr('r'                 , PLACE_RADIUS)
+      .attr('fill'              , 'rgb(255, 248, 220)')
+      .attr('stroke'            , 'rgb(224, 220, 191)')
+      .attr('stroke-width'      , '3px')
+    places.append('text')
+      .attr('text-anchor'       , 'left')
+      .attr('alignment-baseline', 'central')
+      .attr('dx', PLACE_RADIUS * 1.25)
+      .text((place) => place.id)
+    this.nodeMarkings = places.append('text')
+      .attr('class'             , 'marking')
+      .attr('text-anchor'       , 'middle')
+      .attr('alignment-baseline', 'central')
+
+    const transitions = nodesEnter.filter('.transition')
+    if(dragNodes){ transitions.attr('cursor', 'pointer') }
+    transitions.append('circle')
+      .attr('r'                 , PLACE_RADIUS)
+      .attr('fill'              , 'white')
+    transitions.append('rect')
+      .attr('width'             , TRANSITION_SIDE)
+      .attr('height'            , TRANSITION_SIDE)
+      .attr('x'                 , -TRANSITION_SIDE / 2)
+      .attr('y'                 , -TRANSITION_SIDE / 2)
+      .attr('fill'              , 'rgb(220, 227, 255)')
+      .attr('stroke'            , 'rgb(169, 186, 255)')
+      .attr('stroke-width'      , 3)
+    transitions.append('text')
+      .attr('text-anchor'       , 'middle')
+      .attr('alignment-baseline', 'central')
+      .text((transition) => transition.id)
 
     // Create the force simulation.
     this.simulation = d3.forceSimulation()
@@ -52,57 +108,45 @@ export default class PetriNetView {
       .force('center' , d3.forceCenter(width / 2, height / 2))
       .force('collide', d3.forceCollide().radius(TRANSITION_SIDE * 2))
       .on   ('tick'   , () => {
-        this.nodesGroup.selectAll('g')
+        nodesGroup.selectAll('g')
           .attr('transform', (d) => `translate(${d.x}, ${d.y})`)
-        this.arcsGroup.selectAll('g line')
+        arcsGroup.selectAll('g line')
           .attr('x1', (d) => d.source.x)
           .attr('y1', (d) => d.source.y)
           .attr('x2', (d) => d.target.x)
           .attr('y2', (d) => d.target.y)
-        this.arcsGroup.selectAll('g text')
+        arcsGroup.selectAll('g text')
           .attr('x', (d) => (d.source.x + d.target.x) / 2)
           .attr('y', (d) => (d.source.y + d.target.y) / 2)
       })
-    this.render();
-  }
 
-  handleDragStart(d) {
-    if (!d3.event.active) {
-      this.simulation.alphaTarget(0.3).restart()
+    // Run the force simulation to space out places and transitions.
+    this.simulation.nodes(vertices)
+      .force('link').links(edges)
+
+    if(dragNodes){
+      nodesEnter
+      .call(d3.drag()
+        .on('start', ::this._handleDragStart)
+        .on('drag' , ::this._handleDrag)
+        .on('end'  , ::this._handleDragEnd))
     }
-    d.fx = d.x
-    d.fy = d.y
   }
 
-  handleDrag(d) {
-    d.fx = d3.event.x
-    d.fy = d3.event.y
-  }
-
-  handleDragEnd(d) {
-    if (!d3.event.active) {
-      this.simulation.alphaTarget(0)
-    }
-    d.fx = null
-    d.fy = null
-  }
-
-  render() {
-    const model = this.model
-
+  static fromPetriNetModel(model, element, dragNodes){
     // Adapt places and transitions data to d3. The goal is to create an array that contains all
     // vertices and another that contains all egdes, so that it'll be easier to handle them in the
     // force simulation later on.
 
     // vertices: [(id: String, type: String)]
-    const vertices = model.places
-      .map((place) => ({ id: place, type: 'place' }))
-      .concat(model.transitions
+    const places = model.places.map((place) => ({ id: place, type: 'place' }))
+    const transitions = model.transitions
         .map((transition) => ({
           ...transition,
           id  : transition.name,
           type: 'transition',
-        })))
+        }))
+    const vertices = transitions.concat(places)
 
     // edges: [(source: String, target: String, label: Model.Transition.Label)]
     const edges = model.transitions
@@ -121,100 +165,51 @@ export default class PetriNetView {
             target: place,
             label : transition.postconditions[place],
           }))
-        return preconditions.concat(postconditions)
+        let result = preconditions.concat(postconditions)
+        if(transition.inhibitors) {
+          const inhibitors = (transition.inhibitors || [])
+            .map((place) => ({
+              id    : '!' + place + transition.name,
+              source: place,
+              target: transition.name,
+              color : 'red',
+            }))
+          result = result.concat(inhibitors)
+        }
+        return result
       })
       .reduce((partialResult, e) => partialResult.concat(e))
 
-    // Note that because d3 will mutate the data objects we'll bind to the vertices, we can't bind
-    // the updated data as is. Instead, we should mutate the already bound objects, so that we can
-    // preserve the positions and relations that were computed by the previous simulation run.
-    const updatedVertices = this.nodesGroup.selectAll('g').data()
-    for (const vertex of vertices) {
-      const prev = updatedVertices.find((v) => v.id == vertex.id)
-      if (typeof prev !== 'undefined') {
-        for (const prop in vertex) {
-          prev[prop] = vertex[prop]
-        }
-      } else {
-        updatedVertices.push(vertex)
-      }
-    }
-
-    // Draw new places and new transitions.
-    let arcs = this.arcsGroup.selectAll('g')
-      .data(edges, (d) => d.id)
-    arcs.exit().remove()
-
-    const arcsEnter = arcs.enter().append('g')
-      .attr('id', (edge) => edge.id)
-    arcsEnter.append('line')
-      .attr('stroke'      , 'black')
-      .attr('stroke-width', 1)
-      .attr('marker-end'  , 'url(#end)')
-    arcsEnter.filter((edge) => edge.label != '1').append('text')
-      .text((edge) => edge.label)
-
-    arcs = arcsEnter.merge(arcs)
-
-    let nodes = this.nodesGroup.selectAll('g')
-      .data(updatedVertices, (d) => d.id)
-
-    const nodesEnter = nodes.enter().append('g')
-      .attr('id'   , (vertex) => vertex.id)
-      .attr('class', (vertex) => vertex.type)
-
-    if(this.dragNodes){
-      nodesEnter
-      .call(d3.drag()
-        .on('start', ::this.handleDragStart)
-        .on('drag' , ::this.handleDrag)
-        .on('end'  , ::this.handleDragEnd))
-    }
-
-    const places = nodesEnter.filter('.place')
-    places.append('circle')
-      .attr('r'                 , () => PLACE_RADIUS)
-      .attr('fill'              , 'rgb(255, 248, 220)')
-      .attr('stroke'            , 'rgb(224, 220, 191)')
-      .attr('stroke-width'      , '3px')
-    places.append('text')
-      .attr('class'             , 'marking')
-      .attr('text-anchor'       , 'middle')
-      .attr('alignment-baseline', 'central')
-    places.append('text')
-      .attr('text-anchor'       , 'left')
-      .attr('alignment-baseline', 'central')
-      .attr('dx', PLACE_RADIUS * 1.25)
-      .text((place) => place.id)
-
-    const transitions = nodesEnter.filter('.transition')
-      .attr('cursor'            , 'pointer')
-    transitions.append('circle')
-      .attr('r'                 , PLACE_RADIUS)
-      .attr('fill'              , 'white')
-    transitions.append('rect')
-      .attr('width'             , TRANSITION_SIDE)
-      .attr('height'            , TRANSITION_SIDE)
-      .attr('x'                 , -TRANSITION_SIDE / 2)
-      .attr('y'                 , -TRANSITION_SIDE / 2)
-      .attr('fill'              , 'rgb(220, 227, 255)')
-      .attr('stroke'            , 'rgb(169, 186, 255)')
-      .attr('stroke-width'      , 3)
-    transitions.append('text')
-      .attr('text-anchor'       , 'middle')
-      .attr('alignment-baseline', 'central')
-      .text((transition) => transition.id)
-
-    nodes = nodesEnter.merge(nodes)
-
-    const marking = this.model.state;
-    // Update place markings and transition states.
-    nodes.filter('.place').select('.marking')
-      .text((p) => marking[p.id])
-
-    // Run the force simulation to space out places and transitions.
-    this.simulation.nodes(updatedVertices)
-      .force('link').links(edges)
+    return new BipartiteGraphRenderer(element, vertices, edges, dragNodes);
   }
 
+  /**
+   * Set the current marking state.
+   *
+   * @param {object} markings - A mapping from a node ID to a new text for the node
+   */
+  setMarkings(markings){
+    this.nodeMarkings.text((p) => markings[p.id])
+  }
+
+  _handleDragStart(d) {
+    if (!d3.event.active) {
+      this.simulation.alphaTarget(0.3).restart()
+    }
+    d.fx = d.x
+    d.fy = d.y
+  }
+
+  _handleDrag(d) {
+    d.fx = d3.event.x
+    d.fy = d3.event.y
+  }
+
+  _handleDragEnd(d) {
+    if (!d3.event.active) {
+      this.simulation.alphaTarget(0)
+    }
+    d.fx = null
+    d.fy = null
+  }
 }
