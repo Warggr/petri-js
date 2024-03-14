@@ -10,7 +10,6 @@ const PLACE_RADIUS    = Math.sqrt(TRANSITION_SIDE * TRANSITION_SIDE / 2)
  */
 export default class BipartiteGraphRenderer {
   onClickTransition = (_transition) => {};
-  onClickNode       = (_node) => {};
 
   /**
    * Creates a BipartiteGraphRenderer.
@@ -21,9 +20,6 @@ export default class BipartiteGraphRenderer {
    * @param {boolean}     dragNodes - Whether nodes are drag-and-drop-able.
   */
   constructor(element, vertices, edges, dragNodes) {
-    console.warn(vertices)
-    console.warn(edges)
-
     const svg     = d3.select(element)
     const width  = svg.node().getBoundingClientRect().width
     const height = svg.node().getBoundingClientRect().height
@@ -52,7 +48,7 @@ export default class BipartiteGraphRenderer {
     const arcsEnter = arcs.enter().append('g')
       .attr('id', (edge) => edge.id)
     arcsEnter.append('line')
-      .attr('stroke'      , (edge) => edge.color || 'black')
+      .attr('stroke'      , (edge) => edge.color || 'black') // TODO: why are the arrow heads still always black?
       .attr('stroke-width', 1)
       .attr('marker-end'  , 'url(#end)')
     arcsEnter.filter((edge) => edge.label !== undefined && edge.label != '1').append('text')
@@ -100,6 +96,7 @@ export default class BipartiteGraphRenderer {
       .attr('text-anchor'       , 'middle')
       .attr('alignment-baseline', 'central')
       .text((transition) => transition.id)
+    transitions.on('click', (t) => { this.onClickTransition(t) }) // TODO: why does just this.onClickTransition not work?
 
     // Create the force simulation.
     this.simulation = d3.forceSimulation()
@@ -186,10 +183,12 @@ export default class BipartiteGraphRenderer {
   /**
    * Set the current marking state.
    *
-   * @param {object} markings - A mapping from a node ID to a new text for the node
+   * @param {PetriNetState} state - The new state
+   * @param {string} _transition - The transition that caused the new state.
+   *    This parameter is not used and is only for compatibility with the PetriNetView interface.
    */
-  setMarkings(markings){
-    this.nodeMarkings.text((p) => markings[p.id])
+  setState(state, _transition){
+    this.nodeMarkings.text((p) => state[p.id])
   }
 
   _handleDragStart(d) {

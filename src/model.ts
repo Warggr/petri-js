@@ -4,15 +4,16 @@ export type Transition = {
   name: string;
   preconditions: { [node: Node]: number };
   postconditions: { [node: Node]: number };
-  inhibitors: Node[];
+  inhibitors?: Node[];
 }
 
-type PetriNetState = {
+type PetriNetModel = {
+  nodes : Node[],
+  transitions : Transition[],
+}
+
+export default PetriNetModel;
+
+export type PetriNetState = {
   [node: Node]: number;
-}
-
-export default class PetriNetModel {
-  places: Node[];
-  transitions: Transition[];
-  state: PetriNetState;
 }

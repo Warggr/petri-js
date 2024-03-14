@@ -1,4 +1,5 @@
-import PetriNetModel, { Node, Transition } from './model';
+import PetriNetModel, { Node, Transition, PetriNetState } from './model';
+import PetriNetViewer from './view';
 
 type Vertex = {
     id : string,
@@ -9,9 +10,8 @@ type Edge = {
     id : string,
 }
 
-export declare class BipartiteGraphRenderer {
+declare class BipartiteGraphRenderer implements PetriNetViewer {
     onClickTransition: (transition: Transition) => void;
-    onClickNode: (node: Node) => void;
 
     constructor(
         element : HTMLElement,
@@ -25,4 +25,8 @@ export declare class BipartiteGraphRenderer {
         element : HTMLElement,
         dragNodes? : boolean,
     ) : BipartiteGraphRenderer;
+
+    setState(newState: PetriNetState, transition: Transition): void;
 }
+
+export default BipartiteGraphRenderer;
