@@ -2,7 +2,7 @@ import PetriNet from 'petri-js'
 
 // Create a new PetriNet view.
 const model = {
-  places     : [ 'p0', 'p1' ],
+  nodes      : [ 'p0', 'p1' ],
   transitions: [
     {
       name          : 't1',

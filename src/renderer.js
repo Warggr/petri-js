@@ -136,7 +136,7 @@ export default class BipartiteGraphRenderer {
     // force simulation later on.
 
     // vertices: [(id: String, type: String)]
-    const places = model.places.map((place) => ({ id: place, type: 'place' }))
+    const places = model.nodes.map((place) => ({ id: place, type: 'place' }))
     const transitions = model.transitions
         .map((transition) => ({
           ...transition,
